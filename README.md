@@ -42,7 +42,7 @@ Download the latest build from the [Releases](../../releases) page, or build it 
 
 Since SubText isn't distributed through the Mac App Store, macOS Gatekeeper will block it the first time you open it. To allow it:
 
-After moving `SubText.app` to `/Applications` and double-clicking to open it then the "cannot be opened" warning appears, click **OK**.
+After moving `SubText.app` to `/Applications` and double-clicking to open it, click **OK** when the "cannot be opened" warning appears. Then:
 
 **Option A — Terminal**
 ```bash
