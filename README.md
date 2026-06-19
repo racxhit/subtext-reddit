@@ -6,7 +6,7 @@
 [![Swift](https://img.shields.io/badge/swift-5.9-orange)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)]()
 
-SubText is a lightweight, open-source Reddit post downloader, thread fetcher, and text converter built for macOS. Paste a thread URL, hit download, and get back a fully structured `.txt` file containing the post and every nested comment, ready for offline reading, archiving, or further processing.
+SubText is a lightweight, open-source Reddit post downloader, thread fetcher, and text converter built for macOS. Paste a thread URL (or a batch of them), hit download, and get back fully structured `.txt` files containing the post(s) and every nested comment, ready for offline reading, archiving, or further processing.
 
 ## Table of Contents
 
@@ -30,6 +30,9 @@ It's also just a small, single-purpose native app rather than a browser extensio
 ## Features
 
 - **One-click conversion** — paste a thread URL, click Download, get a `.txt` file.
+- **Batch processing** — paste multiple Reddit URLs (one per line) to queue up and convert several threads in a single run.
+- **Smart export options** — save each batch thread as a separate file inside a timestamped folder, or combine them into a single file separated by markdown dividers (handy for building LLM context windows).
+- **Anti-ban rate limiting** — batch downloads automatically add a short delay between requests to keep your session cookie from tripping Reddit's rate limits (429 errors).
 - **Full comment recursion** — every reply is captured, with depth and structure preserved.
 - **No API key required** — works against Reddit's public JSON endpoints, not the restricted official API.
 - **Built-in anti-blocking controls** — set a custom `User-Agent` and session `Cookie` from Settings if Reddit starts rate-limiting you.
@@ -56,10 +59,11 @@ xattr -cr /Applications/SubText.app
 
 ## Usage
 
-1. Copy a link to any Reddit post or comment thread.
-2. Open SubText and paste the URL into the input field.
-3. Click **Download**.
-4. The post and its full comment tree are saved as a `.txt` file to your configured output folder (defaults to Desktop).
+1. Copy a link to any Reddit post or comment thread (or copy multiple links to queue up a batch).
+2. Open SubText and paste the URL(s) into the input field.
+3. For batch downloads, choose your output method: separate files in a folder, or one combined file.
+4. Click **Download**.
+5. Your thread(s) are saved as `.txt` file(s) to your configured output folder (defaults to Desktop).
 
 ## Configuration
 
@@ -92,6 +96,8 @@ Text: Anyone noticed how much this new update makes the phone switch...
     Text: correct me if i'm wrong but did they not bring liquid glass...
 ```
 
+When exporting a batch as a single combined file, individual threads are separated by clear markdown dividers.
+
 ## Building from Source
 
 **Requirements:** macOS 13.0+, Xcode 15.0+
@@ -106,7 +112,7 @@ Select the `SubText` scheme and press `⌘R` to build and run.
 
 ## Troubleshooting
 
-**Downloads fail or hang.** Reddit is likely throttling the default request signature. Open Preferences (`⌘,`) and paste in a `Cookie` value copied from your browser's developer tools (Network tab → any reddit.com request → request headers).
+**Downloads fail or hang.** Reddit is likely throttling the default request signature. Open Preferences (`⌘,`) and paste in a `Cookie` value copied from your browser's developer tools (Network tab → any reddit.com request → request headers). A `403 Access Denied` error usually means your session cookie is missing or expired.
 
 **"SubText is damaged and can't be opened."** This is Gatekeeper blocking an unsigned app, not actual corruption — see [Installation](#installation) above.
 

@@ -22,6 +22,14 @@ struct RedditComment {
     let replies: [RedditComment]
 }
 
+/// Result of a batch extraction — tells the UI how many succeeded/failed.
+struct BatchResult {
+    let outputURL: URL
+    let succeeded: Int
+    let failed: Int
+    var total: Int { succeeded + failed }
+}
+
 // MARK: – Errors
 
 enum ExtractorError: LocalizedError {
@@ -44,7 +52,7 @@ enum ExtractorError: LocalizedError {
         case .httpError(let code):
             switch code {
             case 404: return "Post not found (404). Check the URL."
-            case 403: return "Access denied (403). The post may be private."
+            case 403: return "Access denied (403). Your Reddit cookie may be missing or expired.\nCheck Settings (⌘,) to update it."
             case 429: return "Rate-limited by Reddit. Wait a moment and retry."
             default:  return "Reddit returned HTTP \(code)."
             }
@@ -58,7 +66,7 @@ enum ExtractorError: LocalizedError {
     }
 }
 
-// MARK: – Public API
+// MARK: – Public API (single post)
 
 /// End-to-end extraction: validate → fetch → parse → format → save.
 /// Returns the file URL of the saved .txt file.
@@ -69,6 +77,7 @@ func extractRedditPost(
     saveFolder: URL
 ) async throws -> URL {
     let jsonURL = try validateAndNormalizeURL(urlString)
+    let postID = extractPostID(from: urlString)
     let data = try await fetchJSON(from: jsonURL, cookie: cookie, userAgent: userAgent)
     let (post, comments) = try parseResponse(data)
     let formatted = formatOutput(post: post, comments: comments)
@@ -76,7 +85,110 @@ func extractRedditPost(
     return fileURL
 }
 
-// MARK: – URL validation
+// MARK: – Public API (batch extraction)
+
+/// Batch extraction with a delay between requests.
+/// Calls `onProgress` after each URL is processed.
+/// Returns a BatchResult with the output path and success/failure counts.
+func extractBatch(
+    urls: [String],
+    cookie: String,
+    userAgent: String,
+    saveFolder: URL,
+    mode: BatchOutputMode,
+    delaySeconds: Double = 2.5,
+    onProgress: @escaping (Int, Int, String) -> Void  // (current, total, status)
+) async throws -> BatchResult {
+    var failedCount = 0
+
+    // Create a timestamped batch folder name.
+    let dateFormatter = DateFormatter()
+    dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+    let timestamp = dateFormatter.string(from: Date())
+    let batchFolderName = "SubText_Batch_\(timestamp)"
+
+    switch mode {
+    case .separateFiles:
+        // Create the batch folder.
+        let batchFolder = saveFolder.appendingPathComponent(batchFolderName)
+        try FileManager.default.createDirectory(at: batchFolder, withIntermediateDirectories: true)
+
+        for (index, urlString) in urls.enumerated() {
+            let num = index + 1
+            onProgress(num, urls.count, "Extracting \(num)/\(urls.count)…")
+
+            do {
+                let jsonURL = try validateAndNormalizeURL(urlString)
+                let postID = extractPostID(from: urlString)
+                let data = try await fetchJSON(from: jsonURL, cookie: cookie, userAgent: userAgent)
+                let (post, comments) = try parseResponse(data)
+                let formatted = formatOutput(post: post, comments: comments)
+
+                // Name: 01_postID_Title.txt
+                let prefix = String(format: "%02d", num)
+                let safeName = sanitizeFilename(post.title, maxLength: 60)
+                let filename = "\(prefix)_\(postID)_\(safeName).txt"
+                let fileURL = batchFolder.appendingPathComponent(filename)
+
+                try formatted.write(to: fileURL, atomically: true, encoding: .utf8)
+            } catch {
+                failedCount += 1
+                // Write an error marker file so the user knows which URL failed.
+                let prefix = String(format: "%02d", num)
+                let postID = extractPostID(from: urlString)
+                let errorFile = batchFolder.appendingPathComponent("\(prefix)_\(postID)_ERROR.txt")
+                let errorContent = "Failed to extract: \(urlString)\nError: \(error.localizedDescription)\n"
+                try? errorContent.write(to: errorFile, atomically: true, encoding: .utf8)
+            }
+
+            // Wait between requests (skip delay after the last one).
+            if index < urls.count - 1 {
+                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            }
+        }
+
+        return BatchResult(outputURL: batchFolder, succeeded: urls.count - failedCount, failed: failedCount)
+
+    case .singleFile:
+        // Collect all formatted outputs into one big file.
+        var allSections: [String] = []
+        let separator = "\n\n" + String(repeating: "═", count: 80) + "\n\n"
+
+        for (index, urlString) in urls.enumerated() {
+            let num = index + 1
+            onProgress(num, urls.count, "Extracting \(num)/\(urls.count)…")
+
+            do {
+                let jsonURL = try validateAndNormalizeURL(urlString)
+                let data = try await fetchJSON(from: jsonURL, cookie: cookie, userAgent: userAgent)
+                let (post, comments) = try parseResponse(data)
+                let formatted = formatOutput(post: post, comments: comments)
+
+                let header = "[ Thread \(num)/\(urls.count) ]"
+                allSections.append(header + "\n\n" + formatted)
+            } catch {
+                failedCount += 1
+                let header = "[ Thread \(num)/\(urls.count) — ERROR ]"
+                let errorMsg = "Failed to extract: \(urlString)\nError: \(error.localizedDescription)"
+                allSections.append(header + "\n\n" + errorMsg)
+            }
+
+            // Wait between requests (skip delay after the last one).
+            if index < urls.count - 1 {
+                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+            }
+        }
+
+        let combined = allSections.joined(separator: separator)
+        let filename = "\(batchFolderName).txt"
+        let fileURL = saveFolder.appendingPathComponent(filename)
+        try combined.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        return BatchResult(outputURL: fileURL, succeeded: urls.count - failedCount, failed: failedCount)
+    }
+}
+
+// MARK: – URL helpers
 
 private func validateAndNormalizeURL(_ raw: String) throws -> URL {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -95,6 +207,19 @@ private func validateAndNormalizeURL(_ raw: String) throws -> URL {
 
     guard let url = URL(string: clean) else { throw ExtractorError.invalidURL }
     return url
+}
+
+/// Extract the Reddit post ID from a URL (the part after /comments/).
+func extractPostID(from urlString: String) -> String {
+    // URL format: .../comments/<postID>/...
+    let pattern = #"/comments/(\w+)"#
+    if let range = urlString.range(of: pattern, options: .regularExpression) {
+        let match = urlString[range]
+        // Drop "/comments/" prefix to get the ID
+        let id = match.dropFirst("/comments/".count)
+        return String(id)
+    }
+    return "unknown"
 }
 
 // MARK: – Fetching
@@ -255,7 +380,7 @@ private func flattenComments(_ comments: [RedditComment]) -> [RedditComment] {
 
 // MARK: – File output
 
-private func sanitizeFilename(_ title: String, maxLength: Int = 80) -> String {
+func sanitizeFilename(_ title: String, maxLength: Int = 80) -> String {
     // Remove characters invalid in filenames.
     var name = title
     let invalid = CharacterSet(charactersIn: "\\/*?:\"<>|")

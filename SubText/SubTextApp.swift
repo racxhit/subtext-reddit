@@ -12,11 +12,11 @@ struct SubTextApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
-                .frame(minWidth: 500, minHeight: 320, maxHeight: 400)
+                .frame(minWidth: 520, minHeight: 400)
         }
         .windowStyle(.titleBar)
-        .windowResizability(.contentSize)
-        .defaultSize(width: 520, height: 350)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 540, height: 480)
 
         // Settings window (⌘,)
         Settings {

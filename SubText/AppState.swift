@@ -3,6 +3,28 @@
 
 import SwiftUI
 
+/// Batch output mode: how multi-URL extractions are saved.
+enum BatchOutputMode: String, CaseIterable, Identifiable {
+    case separateFiles = "separateFiles"
+    case singleFile = "singleFile"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .separateFiles: return "Separate files in folder"
+        case .singleFile: return "Single combined file"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .separateFiles: return "folder.badge.plus"
+        case .singleFile: return "doc.text"
+        }
+    }
+}
+
 class AppState: ObservableObject {
     // Default realistic Chrome User-Agent
     private static let defaultUserAgent =
@@ -15,6 +37,7 @@ class AppState: ObservableObject {
     @AppStorage("cookieString") var cookieString: String = ""
     @AppStorage("userAgent") var userAgent: String = AppState.defaultUserAgent
     @AppStorage("saveFolder") var saveFolderPath: String = ""
+    @AppStorage("batchOutputMode") var batchOutputMode: BatchOutputMode = .separateFiles
 
     /// Resolved save folder — falls back to Desktop if nothing is set.
     var saveFolder: URL {
